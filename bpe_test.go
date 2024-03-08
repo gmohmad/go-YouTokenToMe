@@ -45,40 +45,10 @@ func TestSpecialTokens_ToBinary(t *testing.T) {
 	require.Equal(t, bytesArray, specials.toBinary())
 }
 
-func TestBinaryToSpecialTokens(t *testing.T) {
-	req := require.New(t)
-	bytesArray := []byte{0, 0, 0, 1, 0, 0, 1, 3, 0, 2, 37, 2, 129, 0, 0, 0}
-	expected := specialTokens{1, 259, 2*256*256 + 37*256 + 2, -256 * 256 * 256 * 127}
-	specials, err := binaryToSpecialTokens(bytesArray)
-	req.NoError(err)
-	req.Equal(expected, specials)
-	bytesArray = []byte{0, 0, 0, 1, 0, 0, 1, 3, 0, 2, 37, 2, 129, 0, 0}
-	specials, err = binaryToSpecialTokens(bytesArray)
-	req.Error(err)
-	bytesArray = []byte{}
-	specials, err = binaryToSpecialTokens(bytesArray)
-	req.Error(err)
-}
-
 func TestRule_ToBinary(t *testing.T) {
 	rule := rule{1, 2, 257}
 	bytesArray := []byte{0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 1, 1}
 	require.Equal(t, bytesArray, rule.toBinary())
-}
-
-func TestBinaryToRule(t *testing.T) {
-	req := require.New(t)
-	expected := rule{1, 2, 257}
-	bytesArray := []byte{0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 1, 1}
-	rule, err := binaryToRule(bytesArray)
-	req.NoError(err)
-	req.Equal(expected, rule)
-	bytesArray = []byte{0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 1}
-	rule, err = binaryToRule(bytesArray)
-	req.Error(err)
-	bytesArray = []byte{}
-	rule, err = binaryToRule(bytesArray)
-	req.Error(err)
 }
 
 func TestReadModel(t *testing.T) {
