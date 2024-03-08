@@ -5,6 +5,7 @@ import (
 	"container/heap"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -102,16 +103,38 @@ func (s specialTokens) toBinary() []byte {
 	return bytesArray
 }
 
-func binaryToSpecialTokens(bytesArray []byte) (specialTokens, error) {
+func rowToSpecialTokens(row string) (specialTokens, error) {
 	var s specialTokens
-	if len(bytesArray) < 16 {
-		logrus.Error("Bytes array length is too small")
-		return s, errors.New("bytes array is too small")
+	rowSplitted := strings.Fields(row)
+	if len(rowSplitted) != 4 {
+		logrus.Errorf("String slice with len %d != 4", len(rowSplitted))
+		return s, errors.New("string slice is wrong")
 	}
-	s.unk = int32(binary.BigEndian.Uint32(bytesArray))
-	s.pad = int32(binary.BigEndian.Uint32(bytesArray[4:]))
-	s.bos = int32(binary.BigEndian.Uint32(bytesArray[8:]))
-	s.eos = int32(binary.BigEndian.Uint32(bytesArray[12:]))
+	unk, err := strconv.Atoi(rowSplitted[0])
+	if err != nil {
+		logrus.Error("Broken input:", err)
+		return s, err
+	}
+	pad, err := strconv.Atoi(rowSplitted[1])
+	if err != nil {
+		logrus.Error("Broken input:", err)
+		return s, err
+	}
+	bos, err := strconv.Atoi(rowSplitted[2])
+	if err != nil {
+		logrus.Error("Broken input:", err)
+		return s, err
+	}
+	eos, err := strconv.Atoi(rowSplitted[2])
+	if err != nil {
+		logrus.Error("Broken input:", err)
+		return s, err
+	}
+
+	s.unk = int32(unk)
+	s.pad = int32(pad)
+	s.bos = int32(bos)
+	s.eos = int32(eos)
 	return s, nil
 }
 
@@ -123,100 +146,139 @@ func (r rule) toBinary() []byte {
 	return bytesArray
 }
 
-func binaryToRule(bytesArray []byte) (rule, error) {
+func rowToRule(row string) (rule, error) {
+	rowSplitted := strings.Fields(row)
 	var r rule
-	if len(bytesArray) < 12 {
-		logrus.Error("Bytes array length is too small")
-		return r, errors.New("bytes array is too small")
+	if len(rowSplitted) != 3 {
+		logrus.Errorf("String slice with len %d != 3", len(rowSplitted))
+		return r, errors.New("string slice is wrong")
 	}
-	r.left = TokenID(binary.BigEndian.Uint32(bytesArray))
-	r.right = TokenID(binary.BigEndian.Uint32(bytesArray[4:]))
-	r.result = TokenID(binary.BigEndian.Uint32(bytesArray[8:]))
+	rLeft, err := strconv.Atoi(rowSplitted[0])
+	if err != nil {
+		logrus.Error("Broken input:", err)
+		return r, err
+	}
+	rRight, err := strconv.Atoi(rowSplitted[1])
+	if err != nil {
+		logrus.Error("Broken input:", err)
+		return r, err
+	}
+	rRes, err := strconv.Atoi(rowSplitted[2])
+	if err != nil {
+		logrus.Error("Broken input:", err)
+		return r, err
+	}
+
+	r.left = TokenID(rLeft)
+	r.right = TokenID(rRight)
+	r.result = TokenID(rRes)
 	return r, nil
 }
 
 // ReadModel loads the BPE model from the binary dump
 func ReadModel(reader io.Reader) (*Model, error) {
-	buf := make([]byte, 4)
-	var nChars, nRules int
-	if _, err := io.ReadFull(reader, buf); err != nil {
-		logrus.Error("Broken input: ", err)
-		return &Model{}, err
-	}
-	nChars = int(binary.BigEndian.Uint32(buf))
-	if _, err := io.ReadFull(reader, buf); err != nil {
-		logrus.Error("Broken input: ", err)
-		return &Model{}, err
-	}
-	nRules = int(binary.BigEndian.Uint32(buf))
 
-	model := newModel(nRules)
+	scanner := bufio.NewScanner(reader)
+	var nChars, nRules int
+	var char rune
+	var charID TokenID
+	var row string
+	var err error
+
+	model := &Model{}
 	minCharID := TokenID(0)
-	for i := 0; i < nChars; i++ {
-		var char rune
-		var charID TokenID
-		if _, err := io.ReadFull(reader, buf); err != nil {
-			logrus.Error("Broken input: ", err)
-			return &Model{}, err
+
+	i := 0
+	j := 0
+
+	for scanner.Scan() {
+		row = scanner.Text()
+		if i == 0 {
+			nChars, err = strconv.Atoi(strings.Fields(row)[0])
+			if err != nil {
+				logrus.Error("Broken input:", err)
+				return &Model{}, err
+			}
+
+			nRules, err = strconv.Atoi(strings.Fields(row)[1])
+			if err != nil {
+				logrus.Error("Broken input:", err)
+				return &Model{}, err
+			}
+			logrus.Println("Reading bpe model file with number of")
+			logrus.Println("Characters:", nChars)
+			logrus.Println("Rules of merge:", nRules)
+
+			model = newModel(nRules)
 		}
-		char = rune(binary.BigEndian.Uint32(buf))
-		if _, err := io.ReadFull(reader, buf); err != nil {
-			logrus.Error("Broken input: ", err)
-			return &Model{}, err
+		if i < nChars+1 && i != 0 {
+			row = scanner.Text()
+			unicodeChar, err := strconv.Atoi(strings.Fields(row)[0])
+			if err != nil {
+				logrus.Error("Broken input:", err)
+				return &Model{}, err
+			}
+			tokenId, err := strconv.Atoi(strings.Fields(row)[1])
+			if err != nil {
+				logrus.Error("Broken input:", err)
+				return &Model{}, err
+			}
+
+			char = rune(unicodeChar)
+			charID = TokenID(tokenId)
+			model.char2id[char] = charID
+			model.id2char[charID] = char
+			model.recipe[charID] = EncodedString{charID}
+			model.revRecipe[string(char)] = charID
+			if charID < minCharID || minCharID == 0 {
+				minCharID = charID
+				model.spaceID = charID
+			}
 		}
-		charID = TokenID(binary.BigEndian.Uint32(buf))
-		model.char2id[char] = charID
-		model.id2char[charID] = char
-		model.recipe[charID] = EncodedString{charID}
-		model.revRecipe[string(char)] = charID
-		if charID < minCharID || minCharID == 0 {
-			minCharID = charID
-			model.spaceID = charID
+		if i < nChars+nRules+1 && i >= nChars+1 {
+			fmt.Println(j)
+			row = scanner.Text()
+
+			rule, err := rowToRule(row)
+			if err != nil {
+				return model, err
+			}
+			if _, ok := model.recipe[rule.left]; !ok {
+				logrus.Errorf("%d: token id not described before", rule.left)
+				return model, errors.New("token id is impossible")
+			}
+			if _, ok := model.recipe[rule.right]; !ok {
+				logrus.Errorf("%d: token id not described before", rule.right)
+				return model, errors.New("token id is impossible")
+			}
+			model.rules[j] = rule
+			model.rule2id[newTokenIDPair(rule.left, rule.right)] = j
+			model.recipe[rule.result] = append(model.recipe[rule.left], model.recipe[rule.right]...)
+			resultString, err := DecodeToken(model.recipe[rule.result], model.id2char)
+			if err != nil {
+				logrus.Error("Unexpected token id inside the rules: ", err)
+				return model, err
+			}
+			model.revRecipe[resultString] = rule.result
+			j++
 		}
+
+		if i == nChars+nRules+1 {
+			row = scanner.Text()
+			specials, err := rowToSpecialTokens(row)
+			if err != nil {
+				return model, err
+			}
+			model.specialTokens = specials
+			model.revRecipe[bosToken] = TokenID(specials.bos)
+			model.revRecipe[eosToken] = TokenID(specials.eos)
+			model.revRecipe[unkToken] = TokenID(specials.unk)
+			model.revRecipe[padToken] = TokenID(specials.pad)
+		}
+
+		i++
 	}
-	ruleBuf := make([]byte, 12)
-	for i := 0; i < nRules; i++ {
-		if _, err := io.ReadFull(reader, ruleBuf); err != nil {
-			logrus.Error("Broken input: ", err)
-			return &Model{}, err
-		}
-		rule, err := binaryToRule(ruleBuf)
-		if err != nil {
-			return model, err
-		}
-		if _, ok := model.recipe[rule.left]; !ok {
-			logrus.Errorf("%d: token id not described before", rule.left)
-			return model, errors.New("token id is impossible")
-		}
-		if _, ok := model.recipe[rule.right]; !ok {
-			logrus.Errorf("%d: token id not described before", rule.right)
-			return model, errors.New("token id is impossible")
-		}
-		model.rules[i] = rule
-		model.rule2id[newTokenIDPair(rule.left, rule.right)] = i
-		model.recipe[rule.result] = append(model.recipe[rule.left], model.recipe[rule.right]...)
-		resultString, err := DecodeToken(model.recipe[rule.result], model.id2char)
-		if err != nil {
-			logrus.Error("Unexpected token id inside the rules: ", err)
-			return model, err
-		}
-		model.revRecipe[resultString] = rule.result
-	}
-	specialTokensBuf := make([]byte, 16)
-	if _, err := io.ReadFull(reader, specialTokensBuf); err != nil {
-		logrus.Error("Broken input: ", err)
-		return &Model{}, err
-	}
-	specials, err := binaryToSpecialTokens(specialTokensBuf)
-	if err != nil {
-		return model, err
-	}
-	model.specialTokens = specials
-	model.revRecipe[bosToken] = TokenID(specials.bos)
-	model.revRecipe[eosToken] = TokenID(specials.eos)
-	model.revRecipe[unkToken] = TokenID(specials.unk)
-	model.revRecipe[padToken] = TokenID(specials.pad)
-	return model, err
+	return model, nil
 }
 
 // IDToToken returns string token corresponding to the given token id.
