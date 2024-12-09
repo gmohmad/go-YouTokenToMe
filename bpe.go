@@ -5,7 +5,6 @@ import (
 	"container/heap"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -77,6 +76,10 @@ func newModel(nRules int) *Model {
 
 func newTokenIDPair(left, right TokenID) TokenIDPair {
 	return (TokenIDPair(left) << 32) + TokenIDPair(right)
+}
+
+func NewEncodingConfig(bos, eos, reverse bool) *EncodingConfig {
+	return &EncodingConfig{bos: bos, eos: eos, reverse: reverse}
 }
 
 // DecodeToken converts the sequence of chars' ids into the string -
@@ -236,7 +239,6 @@ func ReadModel(reader io.Reader) (*Model, error) {
 			}
 		}
 		if i < nChars+nRules+1 && i >= nChars+1 {
-			fmt.Println(j)
 			row = scanner.Text()
 
 			rule, err := rowToRule(row)

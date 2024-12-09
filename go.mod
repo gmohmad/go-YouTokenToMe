@@ -1,4 +1,4 @@
-module github.com/src-d/go-YouTokenToMe
+module github.com/gmohmad/go-YouTokenToMe
 
 go 1.12
 

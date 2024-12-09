@@ -17,6 +17,6 @@ m, err := bpe.ReadModel(r)
 if err != nil {
     panic(err)
 }
-config := bpe.NewConfig(false, false, false)
+config := bpe.NewEncodingConfig(false, false, false)
 fmt.Println(m.EncodeSentence("мама мыла раму", *config))
 ```
